@@ -1,0 +1,4 @@
+config.json
+.cert/
+__pycache__/
+flick.log

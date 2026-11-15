@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0b0d10">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Flick</title>
+<style>
+  :root {
+    --bg: #0b0d10; --panel: #15191e; --line: #262c34;
+    --text: #eef1f4; --muted: #8b95a1; --accent: #7cf5c4; --bad: #ff8a7a;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) 20px calc(env(safe-area-inset-bottom) + 16px);
+    user-select: none; -webkit-user-select: none;
+  }
+  button { font: inherit; color: inherit; }
+  [hidden] { display: none !important; }
+  header { display: flex; align-items: center; gap: 10px; height: 56px; font-size: 14px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.on { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+  .dot.off { background: var(--bad); }
+  #desk { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  header .spacer { flex: 1; }
+  .chip { font-size: 13px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; white-space: nowrap; }
+  .chip.on { border-color: var(--accent); color: var(--accent); }
+
+  main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; }
+  .view { display: none; flex-direction: column; align-items: center; text-align: center; width: 100%; }
+  body[data-view="unpaired"] #unpaired,
+  body[data-view="empty"] #empty,
+  body[data-view="loaded"] #loaded { display: flex; }
+
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 8px; letter-spacing: -0.01em; }
+  p { margin: 0; color: var(--muted); max-width: 30ch; }
+
+  /* One tap to the right picker. */
+  .sources { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; width: min(100%, 340px); }
+  .source {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    padding: 18px 6px; font-size: 14px;
+  }
+  .source:active { border-color: var(--accent); }
+  .source svg { width: 26px; height: 26px; stroke: var(--accent); fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .source.big { grid-column: 1 / -1; padding: 44px 6px; font-size: 17px; }
+  .source.big svg { width: 40px; height: 40px; }
+  .sources:has(#paste[hidden]) { grid-template-columns: repeat(2, 1fr); }
+  .me { margin-top: 22px; font-size: 13px; color: var(--muted); background: none; border: 0; padding: 8px; }
+  .me b { color: var(--text); font-weight: 500; }
+
+  .arrow { color: var(--accent); font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 18px; animation: nudge 1.8s ease-in-out infinite; }
+  @keyframes nudge { 50% { transform: translateY(-6px); opacity: 0.55; } }
+
+  .stack { position: relative; width: min(64vw, 250px); aspect-ratio: 3 / 4; touch-action: none; margin-bottom: 44px; }
+  .card {
+    position: absolute; inset: 0; border-radius: 20px; background: var(--panel);
+    border: 1px solid var(--line); overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+  }
+  .card.under1 { transform: translateY(20px) scale(0.94); opacity: 0.6; }
+  .card.under2 { transform: translateY(40px) scale(0.88); opacity: 0.3; }
+  .card img { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+  .ext { font-size: 34px; font-weight: 700; letter-spacing: 0.04em; color: var(--accent); }
+  .count {
+    position: absolute; top: 10px; right: 10px; background: var(--accent); color: #06231a;
+    font-size: 13px; font-weight: 700; border-radius: 999px; padding: 3px 9px;
+  }
+  .name { font-size: 15px; max-width: 80vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .bar { width: min(64vw, 250px); height: 3px; background: var(--line); border-radius: 2px; margin-top: 14px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.15s linear; }
+
+  footer { display: flex; gap: 10px; justify-content: center; min-height: 44px; }
+  footer button { font-size: 15px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 18px; }
+  body:not([data-view="loaded"]) footer { visibility: hidden; }
+
+  #toast {
+    position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 70px); width: 90%;
+    transform: translate(-50%, 10px); opacity: 0;
+    transition: opacity 0.25s, transform 0.25s; pointer-events: none; text-align: center;
+    font-size: 18px; font-weight: 600;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #toast small { display: block; font-size: 14px; font-weight: 400; color: var(--muted); margin-top: 4px; }
+  #toast.bad { color: var(--bad); }
+  @media (prefers-reduced-motion: reduce) { .arrow { animation: none; } }
+</style>
+</head>
+<body data-view="unpaired">
+  <header>
+    <span class="dot" id="dot"></span>
+    <span id="desk">Connecting…</span>
+    <span class="spacer"></span>
+    <button class="chip" id="motion" hidden>Phone flick: off</button>
+  </header>
+
+  <main>
+    <section class="view" id="unpaired">
+      <h1>Not paired</h1>
+      <p>Open Flick on your laptop and scan the QR code it shows.</p>
+    </section>
+
+    <section class="view" id="empty">
+      <div class="sources">
+        <button class="source big" data-pick="photos">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 15l-5-5-9 9"/></svg>
+          Photos
+        </button>
+        <button class="source" data-pick="camera">
+          <svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+          Camera
+        </button>
+        <button class="source" data-pick="files">
+          <svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>
+          Files
+        </button>
+        <button class="source" id="paste" hidden>
+          <svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="16" rx="2"/><path d="M9 5V3h6v2"/></svg>
+          Paste
+        </button>
+      </div>
+      <button class="me" id="me">Sending as <b id="meName"></b> · rename</button>
+    </section>
+
+    <section class="view" id="loaded">
+      <div class="arrow" id="hint">↑ Swipe up to send</div>
+      <div class="stack" id="stack"></div>
+      <div class="name" id="name"></div>
+      <div class="meta" id="meta"></div>
+      <div class="bar"><i id="progress"></i></div>
+    </section>
+  </main>
+
+  <footer>
+    <button id="more">Add more</button>
+    <button id="clear">Clear</button>
+  </footer>
+
+  <div id="toast" role="status"></div>
+  <input type="file" id="in-photos" accept="image/*,video/*" multiple hidden>
+  <input type="file" id="in-camera" accept="image/*" capture="environment" hidden>
+  <input type="file" id="in-files" multiple hidden>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+
+// The pairing token arrives in the URL fragment, which is never sent over the network.
+let token = location.hash.slice(1) || store.get('flick-token') || '';
+if (location.hash) { store.set('flick-token', token); history.replaceState(null, '', location.pathname + location.search); }
+
+// ---- who this phone is --------------------------------------------------------
+
+const device = { id: store.get('flick-device-id'), name: store.get('flick-device-name') };
+if (!device.id) {
+  device.id = Array.from(crypto.getRandomValues(new Uint8Array(9)), (b) => b.toString(16).padStart(2, '0')).join('');
+  store.set('flick-device-id', device.id);
+}
+if (!device.name) {
+  const ua = navigator.userAgent;
+  device.name = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android phone' : 'Phone';
+  // Chrome on Android can tell us the model, which is a better default than "Android phone".
+  navigator.userAgentData?.getHighEntropyValues?.(['model']).then((d) => {
+    if (d.model && !store.get('flick-device-name')) { device.name = d.model; showName(); }
+  }).catch(() => {});
+}
+function showName() { $('meName').textContent = device.name; }
+$('me').addEventListener('click', () => {
+  const next = (prompt('Name this phone. The laptop shows it next to everything you send.', device.name) || '').trim().slice(0, 40);
+  if (next) { device.name = next; store.set('flick-device-name', next); showName(); heartbeat(); }
+});
+showName();
+
+function headers(extra) {
+  return { 'X-Token': token, 'X-Device-Id': device.id, 'X-Device-Name': encodeURIComponent(device.name), ...extra };
+}
+
+// ---- small helpers --------------------------------------------------------------
+
+let items = [];       // {file, url, id, loaded, xhr, pending, cancelled}
+let throwing = false;
+let chain = Promise.resolve();
+let lastPicker = 'photos';
+let wakeLock = null;
+
+function setView(v) { document.body.dataset.view = v; }
+function fmt(n) {
+  if (n < 1024) return n + ' B';
+  const u = ['KB', 'MB', 'GB']; let i = -1;
+  do { n /= 1024; i++; } while (n >= 1024 && i < 2);
+  return n.toFixed(n < 10 ? 1 : 0) + ' ' + u[i];
+}
+let toastTimer;
+function toast(text, sub, bad) {
+  const t = $('toast');
+  t.textContent = text;
+  if (sub) { const s = document.createElement('small'); s.textContent = sub; t.appendChild(s); }
+  t.className = 'show' + (bad ? ' bad' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = ''; }, 2600);
+}
+async function api(path, body, timeout = 8000) {
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), timeout);
+  try {
+    return await fetch(path, {
+      method: body ? 'POST' : 'GET',
+      headers: headers(body ? { 'Content-Type': 'application/json' } : {}),
+      body: body ? JSON.stringify(body) : undefined,
+      signal: stop.signal,
+    });
+  } finally { clearTimeout(timer); }
+}
+
+// ---- staying connected ------------------------------------------------------------
+// A heartbeat every few seconds keeps this phone listed on the laptop and the dot honest.
+
+let online = false;
+async function heartbeat() {
+  if (document.hidden) return;
+  try {
+    const r = await api('/api/ping', null, 3500);
+    if (r.status === 401) { token = ''; throw new Error('unpaired'); }
+    if (!r.ok) throw new Error('down');
+    $('desk').textContent = (await r.json()).name;
+    $('dot').className = 'dot on';
+    online = true;
+    if (document.body.dataset.view === 'unpaired') setView('empty');
+  } catch {
+    online = false;
+    $('dot').className = 'dot off';
+    $('desk').textContent = token ? 'Looking for your laptop…' : 'Not paired';
+    if (!token && !items.length) setView('unpaired');
+  }
+}
+setInterval(heartbeat, 4000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) heartbeat(); });
+window.addEventListener('online', heartbeat);
+
+// ---- files --------------------------------------------------------------------------
+
+function sendFile(item) {
+  return new Promise((resolve, reject) => {
+    const xhr = item.xhr = new XMLHttpRequest();
+    xhr.open('PUT', '/api/stage');
+    for (const [k, v] of Object.entries(headers({ 'X-Name': encodeURIComponent(item.file.name), 'X-Size': item.file.size }))) xhr.setRequestHeader(k, v);
+    xhr.upload.onprogress = (e) => { item.loaded = e.loaded; drawProgress(); };
+    xhr.onload = () => {
+      if (xhr.status !== 200) return reject(new Error('upload failed'));
+      item.id = JSON.parse(xhr.responseText).id;
+      item.loaded = item.file.size; drawProgress(); resolve();
+    };
+    xhr.onerror = xhr.onabort = () => reject(new Error('upload failed'));
+    xhr.send(item.file);
+  });
+}
+// A dropped connection shouldn't lose the file: try again a few times, backing off.
+async function sendWithRetry(item) {
+  for (let attempt = 0; ; attempt++) {
+    if (item.cancelled) throw new Error('cancelled');
+    try { return await sendFile(item); }
+    catch (error) {
+      item.loaded = 0; drawProgress();
+      if (attempt >= 4 || item.cancelled) throw error;
+      await sleep(700 * 2 ** attempt);
+    }
+  }
+}
+// Files start travelling as soon as they're picked, so the flick itself is instant.
+function ensureSent(item) {
+  if (item.id) return Promise.resolve();
+  if (!item.pending) {
+    const p = chain.then(() => sendWithRetry(item));
+    chain = p.catch(() => {});
+    p.catch(() => { item.pending = null; });
+    item.pending = p;
+  }
+  return item.pending;
+}
+
+function addFiles(list) {
+  for (const file of list) {
+    const item = { file, loaded: 0, url: file.type.startsWith('image/') ? URL.createObjectURL(file) : null };
+    items.push(item);
+    ensureSent(item);
+  }
+  if (!items.length) return;
+  setView('loaded'); draw();
+  navigator.wakeLock?.request('screen').then((lock) => { wakeLock = lock; }).catch(() => {});
+}
+
+function draw() {
+  const stack = $('stack');
+  stack.replaceChildren();
+  const layers = Math.min(items.length, 3);
+  for (let i = layers - 1; i >= 0; i--) {
+    const card = document.createElement('div');
+    card.className = 'card' + (i ? ' under' + i : '');
+    if (i === 0) {
+      const top = items[items.length - 1];
+      if (top.url) { const img = document.createElement('img'); img.src = top.url; img.alt = ''; card.appendChild(img); }
+      else {
+        const ext = document.createElement('div'); ext.className = 'ext';
+        ext.textContent = (top.file.name.split('.').pop() || 'file').slice(0, 5).toUpperCase();
+        card.appendChild(ext);
+      }
+      if (items.length > 1) { const c = document.createElement('div'); c.className = 'count'; c.textContent = items.length; card.appendChild(c); }
+    }
+    stack.appendChild(card);
+  }
+  const total = items.reduce((s, it) => s + it.file.size, 0);
+  $('name').textContent = items.length === 1 ? items[0].file.name : items.length + ' files';
+  $('meta').textContent = fmt(total);
+  drawProgress();
+}
+function drawProgress() {
+  const total = items.reduce((s, it) => s + it.file.size, 0) || 1;
+  const loaded = items.reduce((s, it) => s + it.loaded, 0);
+  $('progress').style.width = Math.min(100, (loaded / total) * 100) + '%';
+}
+
+function reset(discard) {
+  const ids = items.map((it) => it.id).filter(Boolean);
+  for (const it of items) { it.cancelled = true; if (!it.id && it.xhr) it.xhr.abort(); if (it.url) URL.revokeObjectURL(it.url); }
+  if (discard && ids.length) api('/api/discard', { ids }).catch(() => {});
+  items = []; chain = Promise.resolve(); throwing = false;
+  $('stack').style.cssText = '';
+  wakeLock?.release().catch(() => {}); wakeLock = null;
+  setView('empty');
+}
+
+// ---- the throw ------------------------------------------------------------------------
+
+async function land(ids, power) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const r = await api('/api/throw', { ids, power });
+      if (r.ok) return r.json();
+      if (r.status === 401) throw new Error('unpaired');
+    } catch (error) { if (error.message === 'unpaired') throw error; }
+    if (attempt >= 3) throw new Error('unreachable');
+    await sleep(600 * 2 ** attempt);
+  }
+}
+
+async function throwNow(power) {
+  if (throwing || !items.length) return;
+  throwing = true;
+  const stack = $('stack'), batch = items;
+  const tilt = (Math.random() * 16 - 8).toFixed(1);
+  stack.style.transition = 'transform 0.42s cubic-bezier(0.3, 0, 0.2, 1), opacity 0.42s';
+  stack.style.transform = `translateY(-130vh) rotate(${tilt}deg) scale(0.7)`;
+  stack.style.opacity = '0.4';
+  if (navigator.vibrate) navigator.vibrate(25);
+  $('hint').style.visibility = 'hidden';
+
+  try {
+    await Promise.all(batch.map(ensureSent));
+    const { desk } = await land(batch.map((it) => it.id), power);
+    if (items !== batch) return; // cleared while sending
+    toast(batch.length === 1 ? 'Landed' : batch.length + ' files landed', 'on ' + desk);
+    reset(false);
+  } catch {
+    if (items !== batch) return;
+    // Nothing is lost: the card comes back and the next flick tries again.
+    throwing = false;
+    stack.style.transition = 'transform 0.35s, opacity 0.35s';
+    stack.style.transform = ''; stack.style.opacity = '';
+    toast('Couldn’t reach your laptop', 'Your files are still here. Flick again to retry.', true);
+    heartbeat();
+  } finally {
+    $('hint').style.visibility = '';
+  }
+}
+
+// Swipe the card upward.
+(() => {
+  const stack = $('stack');
+  let startY = null, samples = [];
+  stack.addEventListener('pointerdown', (e) => {
+    if (throwing) return;
+    startY = e.clientY; samples = [{ y: e.clientY, t: e.timeStamp }];
+    stack.setPointerCapture(e.pointerId);
+    stack.style.transition = 'none';
+  });
+  stack.addEventListener('pointermove', (e) => {
+    if (startY === null) return;
+    const dy = e.clientY - startY;
+    stack.style.transform = `translateY(${dy < 0 ? dy : dy * 0.25}px)`;
+    samples.push({ y: e.clientY, t: e.timeStamp });
+    while (samples.length > 2 && e.timeStamp - samples[0].t > 100) samples.shift();
+  });
+  const end = (e) => {
+    if (startY === null) return;
+    const dy = e.clientY - startY, first = samples[0];
+    const v = (e.clientY - first.y) / Math.max(1, e.timeStamp - first.t); // px per ms, negative is up
+    startY = null;
+    if (e.type === 'pointerup' && (v < -0.5 || dy < -150)) throwNow(Math.min(1, Math.abs(v) / 3));
+    else { stack.style.transition = 'transform 0.25s'; stack.style.transform = ''; }
+  };
+  stack.addEventListener('pointerup', end);
+  stack.addEventListener('pointercancel', end);
+})();
+
+// Flick the whole phone. Needs HTTPS, and on iPhone a one-time permission tap.
+(() => {
+  const chip = $('motion');
+  const levels = { off: 0, soft: 10, normal: 15, firm: 22 }; // m/s² spike that counts as a flick
+  const order = ['off', 'normal', 'firm', 'soft'];
+  let level = 'off', listening = false, last = 0;
+  const gravity = { x: 0, y: 0, z: 0 };
+
+  if (!window.isSecureContext || typeof DeviceMotionEvent === 'undefined') return;
+  chip.hidden = false;
+
+  function onMotion(e) {
+    let a = e.acceleration;
+    if (!a || a.x === null) {
+      const raw = e.accelerationIncludingGravity;
+      if (!raw || raw.x === null) return;
+      for (const k of ['x', 'y', 'z']) gravity[k] = gravity[k] * 0.9 + raw[k] * 0.1;
+      a = { x: raw.x - gravity.x, y: raw.y - gravity.y, z: raw.z - gravity.z };
+    }
+    const g = Math.hypot(a.x, a.y, a.z);
+    if (levels[level] && g > levels[level] && e.timeStamp - last > 1500 && !document.hidden) {
+      last = e.timeStamp;
+      throwNow(Math.min(1, g / 35));
+    }
+  }
+  function show() {
+    chip.textContent = 'Phone flick: ' + level;
+    chip.classList.toggle('on', level !== 'off');
+    $('hint').textContent = level === 'off' ? '↑ Swipe up to send' : '↑ Flick your phone, or swipe up';
+    store.set('flick-motion', level);
+  }
+  async function start() {
+    if (listening) return true;
+    try {
+      if (typeof DeviceMotionEvent.requestPermission === 'function') {
+        if ((await DeviceMotionEvent.requestPermission()) !== 'granted') return false;
+      }
+    } catch { return false; }
+    window.addEventListener('devicemotion', onMotion);
+    return (listening = true);
+  }
+  chip.addEventListener('click', async () => {
+    const next = order[(order.indexOf(level) + 1) % order.length];
+    if (next !== 'off' && !(await start())) { toast('Motion access denied', 'Swipe up still works', true); return; }
+    level = next; show();
+  });
+
+  // Restore the last setting where the browser allows starting without a tap (Android).
+  const saved = store.get('flick-motion');
+  if (saved && saved !== 'off' && levels[saved] && typeof DeviceMotionEvent.requestPermission !== 'function') {
+    start().then((ok) => { if (ok) { level = saved; show(); } });
+  }
+  show();
+})();
+
+// ---- picking ------------------------------------------------------------------------------
+
+function pick(kind) { lastPicker = kind; $('in-' + kind).click(); }
+for (const button of document.querySelectorAll('[data-pick]')) button.addEventListener('click', () => pick(button.dataset.pick));
+for (const input of document.querySelectorAll('input[type=file]')) {
+  input.addEventListener('change', () => { addFiles(input.files); input.value = ''; });
+}
+$('more').addEventListener('click', () => pick(lastPicker));
+$('clear').addEventListener('click', () => reset(true));
+
+// Paste: copy an image, a link or some text anywhere on the phone, then send it from here.
+if (navigator.clipboard?.read) {
+  $('paste').hidden = false;
+  $('paste').addEventListener('click', async () => {
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+    const found = [];
+    try {
+      for (const entry of await navigator.clipboard.read()) {
+        const image = entry.types.find((t) => t.startsWith('image/'));
+        if (image) found.push(new File([await entry.getType(image)], `pasted-${stamp}.${image.split('/')[1].replace('jpeg', 'jpg')}`, { type: image }));
+        else if (entry.types.includes('text/plain')) found.push(new File([await entry.getType('text/plain')], `note-${stamp}.txt`, { type: 'text/plain' }));
+      }
+    } catch { toast('Couldn’t read the clipboard', 'Allow paste when your phone asks', true); return; }
+    if (found.length) addFiles(found); else toast('Nothing to paste', 'Copy an image or text first');
+  });
+}
+
+heartbeat();
+</script>
+</body>
+</html>
