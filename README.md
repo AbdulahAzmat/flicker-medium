@@ -14,8 +14,34 @@ On your phone:
 3. **Swipe the card up**, or turn on **Phone flick** and flick the phone toward the laptop.
    The chip cycles normal → firm → soft → off to set how hard a flick has to be.
 
-The file lands in `Downloads\Flick`. If the laptop page isn't open, Windows shows a notification
-saying what arrived and from which phone.
+The file lands in `Downloads\Flick`, and a small card drops in from the top of the screen showing
+what arrived and from which phone, while a soft light rings the edges of the screen in a
+tick-tock double pulse. It floats over whatever you're working in, never takes keyboard focus,
+and leaves after about three and a half seconds. Click it to open the file (or the folder, for several).
+
+Whatever lands is also copied to the clipboard, so you can press Ctrl+V straight away:
+
+- into a folder, chat, email or upload box, it pastes the file (or all the files from one flick);
+- into Paint, Photoshop or a document, a single photo pastes as a picture;
+- into any text box, a single small text note (such as one sent with **Paste** on the phone) pastes as text.
+
+This replaces whatever was on the clipboard. Set `"copy_to_clipboard": false` in `config.json` to turn it off.
+
+The light and the card take the colour of what arrived:
+
+| Arrived | Colour |
+| --- | --- |
+| Photos and other images | Light purple |
+| PDFs | Light red |
+| Documents, slides, spreadsheets, text | White |
+| Videos | Light blue |
+| Audio | Light amber |
+| Anything else, or a mix | Mint |
+
+The colours are the `COLOURS` table at the top of `overlay.py`.
+
+Set `"landing_card": false` in `config.json` to get a plain Windows notification instead.
+`python overlay.py pdf` shows a demo card (also `image`, `doc`, `video`, `audio`, `file`).
 
 ### First time on a new phone
 

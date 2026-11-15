@@ -46,6 +46,8 @@ def load_config():
         "token": secrets.token_urlsafe(16),
         "phone_port": 7443,
         "desk_port": 7080,
+        "landing_card": True,
+        "copy_to_clipboard": True,
     }
     if CONFIG_PATH.exists():
         config.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
@@ -64,6 +66,7 @@ desks = set()  # open laptop-page websockets
 phones = {}  # device id -> {"name", "seen"}
 senders = {}  # file name -> name of the phone that sent it
 tray = None
+card = None  # the on-screen landing card (overlay.py), Windows only
 
 
 def log(message):
@@ -152,6 +155,9 @@ def unique_path(folder, name):
     return path
 
 
+DOC_TYPES = {".doc", ".docx", ".odt", ".rtf", ".txt", ".md", ".ppt", ".pptx", ".xls", ".xlsx", ".csv"}
+
+
 def kind_of(name):
     mime = mimetypes.guess_type(name)[0] or ""
     if mime.startswith("image/"):
@@ -160,6 +166,10 @@ def kind_of(name):
         return "pdf"
     if mime.startswith("video/"):
         return "video"
+    if mime.startswith("audio/"):
+        return "audio"
+    if os.path.splitext(name)[1].lower() in DOC_TYPES:
+        return "doc"
     return "file"
 
 
@@ -239,6 +249,50 @@ def notify(title, message):
             pass
 
 
+def human_size(n):
+    for unit in ("B", "KB", "MB"):
+        if n < 1024:
+            return f"{n:.0f} {unit}" if unit == "B" or n >= 10 else f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} GB"
+
+
+def copy_to_clipboard(paths):
+    """Make what landed pasteable with Ctrl+V. Returns True if the clipboard now holds it."""
+    if sys.platform != "win32" or not CONFIG["copy_to_clipboard"]:
+        return False
+    try:
+        import clipboard
+
+        formats, sequence = clipboard.copy_files(paths)
+        if sequence is None:
+            return False
+        if len(paths) == 1 and kind_of(paths[0].name) == "image":
+            threading.Thread(target=clipboard.add_picture, args=(paths[0], formats, sequence), daemon=True).start()
+        return True
+    except Exception as error:
+        log(f"could not copy to the clipboard: {error}")
+        return False
+
+
+def announce(paths, device):
+    """Tell the user something landed without interrupting them: the floating card, else a toast."""
+    total = human_size(sum(p.stat().st_size for p in paths))
+    copied = "Copied · " if copy_to_clipboard(paths) else ""
+    if len(paths) == 1:
+        title, click = paths[0].name, lambda: open_path(paths[0])
+    else:
+        title, click = f"{len(paths)} files", lambda: open_path(FOLDER)
+    if card is not None:
+        preview = next((p for p in paths if kind_of(p.name) == "image"), None)
+        badge = paths[0].suffix.lstrip(".") or "file"
+        kinds = {kind_of(p.name) for p in paths}
+        kind = kinds.pop() if len(kinds) == 1 else "file"  # a mixed batch gets the neutral colour
+        card.show(title, f"{copied}From {device} · {total}", preview=preview, badge=badge, on_click=click, kind=kind)
+    elif not desks:
+        notify(f"From {device}", f"{title} landed in {FOLDER.name}")
+
+
 def open_path(path, reveal=False):
     if sys.platform == "win32":
         if reveal:
@@ -298,7 +352,7 @@ async def throw(request):
     require_token(request)
     _, device = device_of(request)
     data = await request.json()
-    landed = []
+    landed, paths = [], []
     for sid in data.get("ids", []):
         item = staged.pop(sid, None)
         if not item:
@@ -308,6 +362,7 @@ async def throw(request):
         os.replace(path, dest)
         senders[dest.name] = device
         landed.append(describe(dest))
+        paths.append(dest)
         log(f"landed from {device}: {dest.name}")
     if landed:
         save_senders()
@@ -316,9 +371,7 @@ async def throw(request):
         except (TypeError, ValueError):
             power = 0.5
         await broadcast({"type": "drop", "files": landed, "power": power, "from": device})
-        if not desks:
-            what = landed[0]["name"] if len(landed) == 1 else f"{len(landed)} files"
-            notify(f"From {device}", f"{what} landed in {FOLDER.name}")
+        announce(paths, device)
     return web.json_response({"landed": [f["name"] for f in landed], "desk": socket.gethostname()})
 
 
@@ -617,6 +670,15 @@ async def main(hidden, open_browser):
         if open_browser:
             webbrowser.open(DESK_URL)
         return
+
+    if sys.platform == "win32" and CONFIG["landing_card"]:
+        global card
+        try:
+            from overlay import Overlay
+
+            card = Overlay()
+        except Exception as error:
+            log(f"landing card unavailable, falling back to notifications: {error}")
 
     stop = asyncio.Event()
     keeper = asyncio.create_task(housekeeping(app, tls))
